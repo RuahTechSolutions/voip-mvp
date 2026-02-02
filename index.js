@@ -16,7 +16,7 @@ function configure() {
             keyId: "TXCPTLQB58",
             teamId: "LBA58EFBZF"
         },
-        production: false
+        production: false //change this to true if sending a notification to a production iOS app (including TestFlight)
     };
 
     var apnProvider = new apn.Provider(options);
