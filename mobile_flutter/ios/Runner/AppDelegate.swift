@@ -1,8 +1,13 @@
-import UIKit
 import Flutter
 
+import PushKit
+
+import UIKit
+
+import flutter_callkit_incoming
+
 @UIApplicationMain
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, PKPushRegistryDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -12,7 +17,7 @@ import Flutter
       name: "com.ruah.voip.test/apn",
       binaryMessenger: controller.binaryMessenger
     )
-    
+
     apnChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
       switch call.method {
       case "getAPNToken":
@@ -21,19 +26,64 @@ import Flutter
         result(FlutterMethodNotImplemented)
       }
     }
-    
+
     GeneratedPluginRegistrant.register(with: self)
-    
+
+    // Register for VoIP push notifications
+    let voipRegistry = PKPushRegistry(queue: DispatchQueue.main)
+    voipRegistry.delegate = self
+    voipRegistry.desiredPushTypes = [.voIP]
+
     // Request user notification permission
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) {
+      granted, error in
       DispatchQueue.main.async {
         UIApplication.shared.registerForRemoteNotifications()
       }
     }
-    
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
-  
+
+  // MARK: - PKPushRegistryDelegate
+
+  func pushRegistry(
+    _ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType
+  ) {
+    let token = pushCredentials.token.map { String(format: "%02.2hhx", $0) }.joined()
+    print("VoIP Token: \(token)")
+
+    // Send token to Flutter via flutter_callkit_incoming
+    SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(token)
+  }
+
+  func pushRegistry(
+    _ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload,
+    for type: PKPushType, completion: @escaping () -> Void
+  ) {
+    guard type == .voIP else {
+      completion()
+      return
+    }
+
+    // Extract call info from payload (customize based on your server payload)
+    let id = UUID().uuidString
+    let callerName = payload.dictionaryPayload["caller_name"] as? String ?? "Unknown Caller"
+    let handle = payload.dictionaryPayload["caller_id"] as? String ?? ""
+
+    let callData = flutter_callkit_incoming.Data(
+      id: id, nameCaller: callerName, handle: handle, type: 0)
+    callData.extra = payload.dictionaryPayload as NSDictionary
+
+    SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(
+      callData, fromPushKit: true)
+    completion()
+  }
+
+  func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+    print("VoIP token invalidated")
+  }
+
   private func getAPNToken(result: @escaping FlutterResult) {
     // Get the device token for APN
     DispatchQueue.main.async {
@@ -44,7 +94,7 @@ import Flutter
         UserDefaults.standard.setValue("pending", forKey: "apnTokenRequest")
         // Request remote notification registration
         UIApplication.shared.registerForRemoteNotifications()
-        
+
         // For testing, return a placeholder
         // In production, this would be called from didRegisterForRemoteNotificationsWithDeviceToken
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -52,15 +102,25 @@ import Flutter
             result(token)
           } else {
             // Generate a test token format for demonstration
-            let testToken = String(format: "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
-              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255)
+            let testToken = String(
+              format:
+                "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+              UInt8.random(in: 0...255)
             )
             result(testToken)
           }
@@ -70,32 +130,36 @@ import Flutter
       }
     }
   }
-  
+
   override func application(
     _ application: UIApplication,
-    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Foundation.Data
   ) {
     let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
     print("APNs Device Token: \(token)")
     UserDefaults.standard.setValue(token, forKey: "cachedAPNToken")
   }
-  
+
   override func application(
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
     print("Failed to register for remote notifications: \(error)")
   }
-  
+
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
     print("Notification received in foreground: \(notification.request.content.userInfo)")
-    completionHandler([.banner, .sound, .badge])
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
   }
-  
+
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
