@@ -2,17 +2,21 @@ var apn = require('apn')
 var express = require('express')
 var app = express()
 
-let deviceTokens = ["dlee2a753d5a2769d962e48e67c4749059936daeced0ba1303385715aa7eff3f"]
+let deviceTokens = ["dlee2a753d5a2769d962e48e67c4749059936daeced0ba1303385715aa7eff3f",
+    "179b0dc13d6969933e779b53bb721ac6bd832decb33611e142955433d4df401f",
+    "428cfc1463a185d9fa060a3149c2a973b3d563b06e23bbeb512ac7e6fd3fb7ad"
+]
 
 app.use(express.json())
 
 function configure() {
     var options = {
         token: {
-            key: "AuthKey_F22HR33BNR.p8",
-            keyId: "F22HR33BNR",
-            teamId: "3756UBXGBX"
+            key: "AuthKey_TXCPTLQB58.p8",
+            keyId: "TXCPTLQB58",
+            teamId: "LBA58EFBZF"
         },
+        production: false
     };
 
     var apnProvider = new apn.Provider(options);
@@ -33,7 +37,7 @@ function sendNotification(apnProvider, deviceToken, title = "Incoming Call", bod
         'callId': 'call-' + Date.now(),
         'from': 'Test Caller'
     };
-    note.topic = "com.itoi.teledoctorMobile.voip";
+    note.topic = "com.ruah.voip.test.voip";
     note.pushType = "voip";
 
     apnProvider.send(note, deviceToken).then((result) => {
